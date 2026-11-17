@@ -1,4 +1,4 @@
-from app.router import classify, extract_url, is_safe_url
+from app.router import classify, extract_number, extract_url, is_safe_url
 
 
 def test_classify_question():
@@ -22,6 +22,13 @@ def test_classify_query():
 def test_classify_chart():
     assert classify("Построй график АЛТ") == "chart"
     assert classify("Покажи тренд витамина D") == "chart"
+
+
+def test_extract_number():
+    assert extract_number("вес 109") == 109
+    assert extract_number("давление 120/80") == 120
+    assert extract_number("вес 80,5 кг") == 80.5
+    assert extract_number("без числа") is None
 
 
 def test_classify_metric():

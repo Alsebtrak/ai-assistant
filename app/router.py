@@ -146,16 +146,29 @@ async def ask_metric(session: AsyncSession, user_id: int, text: str) -> str:
     )
 
 
+NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?")
+
+
+def extract_number(text: str) -> float | None:
+    match = NUMBER_RE.search(text)
+    return float(match.group().replace(",", ".")) if match else None
+
+
 async def record_metric(session: AsyncSession, user_id: int, text: str) -> str:
+    value = extract_number(text)
+    if value is None:
+        return "Не вижу числа. Напиши так: «вес 80 кг» или «давление 120/80»."
+
     raw = await llm.chat(
         [
             {
                 "role": "system",
                 "content": (
-                    "Извлеки из сообщения числовое измерение. Ответ — только JSON: "
-                    '{"name": "вес", "value": 80, "unit": "кг", "category": "медицина"}. '
-                    "category — короткая группа: медицина, спорт, стрельба из лука, "
-                    "питомцы, растения, другое. Если это не измерение — {\"name\": null}."
+                    "Определи, что за измерение в сообщении: название, единицу и категорию. "
+                    "Число не придумывай и не меняй — его подставят отдельно. Ответ — только JSON: "
+                    '{"name": "название", "unit": "единица или null", "category": "группа"}. '
+                    "category — короткая группа: медицина, спорт, стрельба из лука, питомцы, "
+                    "растения, другое. Если это не измерение — {\"name\": null}."
                 ),
             },
             {"role": "user", "content": text},
@@ -164,8 +177,7 @@ async def record_metric(session: AsyncSession, user_id: int, text: str) -> str:
     )
     data = parse_json(raw)
     name = str(data.get("name") or "").strip()[:200]
-    value = data.get("value")
-    if not name or value is None:
+    if not name:
         return "Не понял, что записать. Напиши так: «вес 80 кг» или «давление 120/80»."
 
     unit = str(data.get("unit") or "").strip()[:32] or None
