@@ -6,7 +6,7 @@ packages:
   - git
   - ufw
   - fail2ban
-  - awscli
+  - rclone
 
 runcmd:
   - systemctl enable --now docker
@@ -19,3 +19,7 @@ runcmd:
   - ufw --force enable
   - mkdir -p /home/ubuntu/ai_assistant
   - chown ubuntu:ubuntu /home/ubuntu/ai_assistant
+  # Yandex Cloud без IPv6: без этого apt и curl уходят в недоступный IPv6
+  - echo 'precedence ::ffff:0:0/96  100' >> /etc/gai.conf
+  # Основной IP api.telegram.org из РФ недоступен, этот — работает
+  - grep -q 'api.telegram.org' /etc/hosts || echo '149.154.167.220 api.telegram.org' >> /etc/hosts

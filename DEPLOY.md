@@ -11,8 +11,16 @@ yc compute instance create assistant \
   --metadata-from-file user-data=infra/cloud-init.yaml,ssh-keys=.secrets/ssh_keys.txt
 ```
 
-cloud-init ставит Docker, compose, ufw (22/80/443) и fail2ban. Ждать 2–3 минуты,
-проверка: `ssh -i .secrets/ssh_key ubuntu@<ip> docker --version`.
+cloud-init ставит Docker, compose, ufw (22/80/443), fail2ban, rclone и
+настраивает приоритет IPv4 (в YC нет IPv6, иначе apt/curl уходят в таймаут).
+
+**Обязательно:** у security group должно быть egress-правило, иначе у ВМ нет
+интернета вообще:
+
+```bash
+yc vpc security-group update-rules assistant \
+  --add-rule "direction=egress,port=any,protocol=any,v4-cidrs=[0.0.0.0/0]"
+```
 
 ## 2. Проверить Telegram с сервера
 
@@ -21,7 +29,10 @@ ssh -i .secrets/ssh_key ubuntu@<ip> \
   "curl -s -o /dev/null -w '%{http_code}\n' --max-time 10 https://api.telegram.org"
 ```
 
-`000` — недоступен, нужен `TELEGRAM_PROXY_URL`. `404`/`200` — работает напрямую.
+`000` с основного IP — норма: `149.154.166.110` из РФ блокирован.
+cloud-init прописывает в `/etc/hosts` рабочий `149.154.167.220`, после этого
+ответ `302` и бот работает без прокси. Если IP перестанет отвечать — заменить
+на другой DC Telegram или включить `TELEGRAM_PROXY_URL`.
 
 ## 3. Код
 

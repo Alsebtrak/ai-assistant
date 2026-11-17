@@ -21,6 +21,7 @@ tar -xzf ~/assistant.tar.gz -C ~/ai_assistant
 rm ~/assistant.tar.gz
 mv ~/.env ~/ai_assistant/.env
 cd ~/ai_assistant
+sed -i 's/\r$//' .env infra/*.sh
 sudo docker compose up -d --build
 sleep 5
 curl -fsS http://localhost/health
