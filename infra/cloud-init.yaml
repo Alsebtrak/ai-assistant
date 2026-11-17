@@ -1,0 +1,21 @@
+#cloud-config
+package_update: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - git
+  - ufw
+  - fail2ban
+  - awscli
+
+runcmd:
+  - systemctl enable --now docker
+  - usermod -aG docker ubuntu
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
+  - mkdir -p /home/ubuntu/ai_assistant
+  - chown ubuntu:ubuntu /home/ubuntu/ai_assistant
