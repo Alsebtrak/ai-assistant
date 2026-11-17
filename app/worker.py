@@ -16,6 +16,7 @@ from app.db import SessionLocal
 from app.extract import ExtractError, extract_from_image, extract_from_text
 from app.memory import index_document
 from app.models import Document, Reminder
+from app.reminders import next_due
 from app.telegram import make_bot
 from app.text import split_message
 
@@ -158,7 +159,12 @@ async def check_reminders(ctx) -> None:
         try:
             for reminder in rows:
                 await bot.send_message(reminder.user_id, f"⏰ {reminder.text}")
-                reminder.sent_at = now
+                upcoming = next_due(reminder.due_at, reminder.repeat_days, now)
+                if upcoming:
+                    reminder.due_at = upcoming
+                    reminder.sent_at = None
+                else:
+                    reminder.sent_at = now
             await session.commit()
         finally:
             await bot.session.close()

@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -147,6 +148,7 @@ class Reminder(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, index=True)
     text: Mapped[str] = mapped_column(String(500))
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    repeat_days: Mapped[int | None] = mapped_column(Integer)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

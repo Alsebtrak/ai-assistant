@@ -226,10 +226,14 @@ async def remind(session: AsyncSession, user_id: int, text: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "Извлеки из просьбы текст напоминания и момент времени. Ответ — только JSON: "
-                    '{"text": "что напомнить", "due_at": "YYYY-MM-DDTHH:MM:SS"}. '
+                    "Извлеки из просьбы текст напоминания, момент времени и повтор. "
+                    "Ответ — только JSON: "
+                    '{"text": "что напомнить", "due_at": "YYYY-MM-DDTHH:MM:SS", '
+                    '"repeat_days": null}. '
                     f"Сейчас {now:%Y-%m-%d %H:%M}, часовой пояс Europe/Moscow. "
-                    "Если время не указано — due_at: null."
+                    "Если время не указано — due_at: null. Если напоминание повторяется "
+                    "(каждый день — 1, каждую неделю — 7, каждые 3 дня — 3), укажи repeat_days "
+                    "числом, иначе null."
                 ),
             },
             {"role": "user", "content": text},
@@ -251,9 +255,21 @@ async def remind(session: AsyncSession, user_id: int, text: str) -> str:
     if due <= now:
         due = now + timedelta(minutes=1)
 
-    session.add(Reminder(user_id=user_id, text=reminder_text, due_at=due.astimezone(UTC)))
+    repeat_days = data.get("repeat_days")
+    repeat_days = int(repeat_days) if isinstance(repeat_days, (int, float)) and repeat_days >= 1 else None
+
+    session.add(
+        Reminder(
+            user_id=user_id,
+            text=reminder_text,
+            due_at=due.astimezone(UTC),
+            repeat_days=repeat_days,
+        )
+    )
     await session.commit()
-    return f"⏰ Напомню {due:%d.%m в %H:%M}: {reminder_text}"
+
+    suffix = f", повтор каждые {repeat_days} дн." if repeat_days else ""
+    return f"⏰ Напомню {due:%d.%m в %H:%M}: {reminder_text}{suffix}"
 
 
 async def wiki_lookup(query: str) -> tuple[str, str] | None:
