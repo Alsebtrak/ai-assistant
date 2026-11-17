@@ -17,6 +17,7 @@ from app.extract import ExtractError, extract_from_image, extract_from_text
 from app.memory import index_document
 from app.models import Document, Reminder
 from app.telegram import make_bot
+from app.text import split_message
 
 log = logging.getLogger(__name__)
 
@@ -81,7 +82,13 @@ async def notify(document: Document, text: str, with_buttons: bool) -> None:
                     ]
                 ]
             )
-        await bot.send_message(document.user_id, text[:4000], reply_markup=markup)
+        parts = split_message(text)
+        for index, part in enumerate(parts):
+            await bot.send_message(
+                document.user_id,
+                part,
+                reply_markup=markup if index == len(parts) - 1 else None,
+            )
     except Exception:
         log.exception("telegram notify failed")
     finally:

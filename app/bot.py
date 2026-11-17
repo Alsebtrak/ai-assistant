@@ -13,7 +13,7 @@ from sqlalchemy import select
 from app import storage
 from app.config import settings
 from app.db import SessionLocal, init_db
-from app.memory import ask
+from app.memory import ask, index_document
 from app.models import Document, Entity, Fact, Measurement
 from app.router import (
     ask_metric,
@@ -25,6 +25,7 @@ from app.router import (
     search_answer,
 )
 from app.telegram import make_bot
+from app.text import split_message
 
 log = logging.getLogger(__name__)
 router = Router()
@@ -50,6 +51,41 @@ def keyboard(document_id: uuid.UUID) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def answer_keyboard(document_id: uuid.UUID) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="💾 Сохранить в память", callback_data=f"note:save:{document_id}"
+                ),
+                InlineKeyboardButton(
+                    text="🗑 Удалить из памяти", callback_data=f"note:drop:{document_id}"
+                ),
+            ]
+        ]
+    )
+
+
+async def send_answer(message: Message, answer: str, question: str) -> None:
+    async with SessionLocal() as session:
+        document = Document(
+            user_id=message.from_user.id,
+            kind="note",
+            status="draft",
+            raw_text=answer,
+            summary=question[:500],
+        )
+        session.add(document)
+        await session.flush()
+        document_id = document.id
+        await session.commit()
+
+    parts = split_message(answer)
+    for index, part in enumerate(parts):
+        markup = answer_keyboard(document_id) if index == len(parts) - 1 else None
+        await message.answer(part, reply_markup=markup)
 
 
 @router.message(CommandStart())
@@ -147,7 +183,7 @@ async def on_text(message: Message) -> None:
         return
 
     answer = (answer or "").strip() or "Не смог сформулировать ответ, попробуй переформулировать вопрос."
-    await message.answer(answer[:4000])
+    await send_answer(message, answer, text)
 
 
 @router.callback_query(F.data.startswith("save:"))
@@ -260,6 +296,47 @@ async def on_drop(callback: CallbackQuery) -> None:
             await session.commit()
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.answer("Удалено")
+
+
+@router.callback_query(F.data.startswith("note:save:"))
+async def on_note_save(callback: CallbackQuery) -> None:
+    document_id = uuid.UUID(callback.data.split(":")[2])
+    async with SessionLocal() as session:
+        document = await session.get(Document, document_id)
+        if document is None or document.user_id != callback.from_user.id:
+            await callback.answer("Не найдено")
+            return
+        if document.status == "processed":
+            await callback.answer("Уже в памяти")
+            return
+        document.status = "processed"
+        await index_document(session, document)
+        await session.commit()
+
+    await callback.message.edit_reply_markup(
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🗑 Удалить из памяти", callback_data=f"note:drop:{document_id}"
+                    )
+                ]
+            ]
+        )
+    )
+    await callback.answer("Сохранил в память")
+
+
+@router.callback_query(F.data.startswith("note:drop:"))
+async def on_note_drop(callback: CallbackQuery) -> None:
+    document_id = uuid.UUID(callback.data.split(":")[2])
+    async with SessionLocal() as session:
+        document = await session.get(Document, document_id)
+        if document and document.user_id == callback.from_user.id:
+            await session.delete(document)
+            await session.commit()
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer("Удалено из памяти")
 
 
 async def main() -> None:

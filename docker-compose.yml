@@ -30,6 +30,8 @@ services:
     build: .
     command: python -m app.bot
     env_file: .env
+    extra_hosts:
+      - "api.telegram.org:149.154.167.220"
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,6 +42,8 @@ services:
     build: .
     command: arq app.worker.WorkerSettings
     env_file: .env
+    extra_hosts:
+      - "api.telegram.org:149.154.167.220"
     depends_on:
       postgres:
         condition: service_healthy
