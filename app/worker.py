@@ -1,8 +1,9 @@
 import io
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import ClassVar
+from zoneinfo import ZoneInfo
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from arq import cron
@@ -13,6 +14,7 @@ from sqlalchemy import select
 from app import storage
 from app.config import settings
 from app.db import SessionLocal
+from app.digest import build_digest
 from app.extract import ExtractError, extract_from_image, extract_from_text
 from app.memory import index_document
 from app.models import Document, Reminder
@@ -140,6 +142,56 @@ async def process_document(ctx, document_id: str) -> None:
         await notify(document, describe(document), with_buttons=True)
 
 
+MSK = ZoneInfo("Europe/Moscow")
+
+
+async def send_digest(ctx) -> None:
+    if not settings.owner_telegram_id:
+        return
+    now = datetime.now(UTC)
+    day_start = (
+        datetime.now(MSK).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
+    )
+    day_end = day_start + timedelta(days=1)
+
+    async with SessionLocal() as session:
+        reminders = list(
+            (
+                await session.scalars(
+                    select(Reminder)
+                    .where(
+                        Reminder.user_id == settings.owner_telegram_id,
+                        Reminder.sent_at.is_(None),
+                        Reminder.due_at >= day_start,
+                        Reminder.due_at < day_end,
+                    )
+                    .order_by(Reminder.due_at)
+                )
+            ).all()
+        )
+        documents = list(
+            (
+                await session.scalars(
+                    select(Document)
+                    .where(
+                        Document.user_id == settings.owner_telegram_id,
+                        Document.created_at >= now - timedelta(days=1),
+                        Document.status.in_(["processed", "confirmed"]),
+                    )
+                    .order_by(Document.created_at.desc())
+                )
+            ).all()
+        )
+
+    bot = make_bot()
+    try:
+        await bot.send_message(
+            settings.owner_telegram_id, build_digest(reminders, documents, now)
+        )
+    finally:
+        await bot.session.close()
+
+
 async def check_reminders(ctx) -> None:
     now = datetime.now(UTC)
     async with SessionLocal() as session:
@@ -171,6 +223,9 @@ async def check_reminders(ctx) -> None:
 
 
 class WorkerSettings:
-    functions: ClassVar = [process_document, check_reminders]
-    cron_jobs: ClassVar = [cron(check_reminders, minute=set(range(60)))]
+    functions: ClassVar = [process_document, check_reminders, send_digest]
+    cron_jobs: ClassVar = [
+        cron(check_reminders, minute=set(range(60))),
+        cron(send_digest, hour=6, minute=0),
+    ]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)

@@ -24,6 +24,13 @@ def test_classify_chart():
     assert classify("Покажи тренд витамина D") == "chart"
 
 
+def test_classify_metric():
+    assert classify("вес 80") == "metric"
+    assert classify("давление 120/80") == "metric"
+    assert classify("серия 108") == "metric"
+    assert classify("Какой у меня вес?") != "metric"
+
+
 def test_classify_remind():
     assert classify("напомни завтра в 10:00 поздравить Юлю") == "remind"
     assert classify("Не забудь про полив") == "remind"

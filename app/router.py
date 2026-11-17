@@ -7,6 +7,7 @@ LLM используется только внутри обработчиков 
 import ipaddress
 import re
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
@@ -35,6 +36,10 @@ QUERY_RE = re.compile(
     re.IGNORECASE,
 )
 CHART_RE = re.compile(r"\b(график\w*|динамик\w*|тренд\w*)\b", re.IGNORECASE)
+QUESTION_WORDS_RE = re.compile(
+    r"\?|сколько|какой|какая|какие|покажи|график|напомни|запомни|найди|что такое",
+    re.IGNORECASE,
+)
 MAX_PAGE = 2_000_000
 MSK = ZoneInfo("Europe/Moscow")
 
@@ -52,6 +57,12 @@ def classify(text: str) -> str:
         return "chart"
     if QUERY_RE.search(text):
         return "query"
+    if (
+        len(text) <= 80
+        and re.search(r"\d", text)
+        and not QUESTION_WORDS_RE.search(text)
+    ):
+        return "metric"
     return "question"
 
 
@@ -133,6 +144,45 @@ async def ask_metric(session: AsyncSession, user_id: int, text: str) -> str:
         f"{row.measured_at:%d.%m.%Y} — {row.name}: {row.value:g} {row.unit or ''}".strip()
         for row in result
     )
+
+
+async def record_metric(session: AsyncSession, user_id: int, text: str) -> str:
+    raw = await llm.chat(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "Извлеки из сообщения числовое измерение. Ответ — только JSON: "
+                    '{"name": "вес", "value": 80, "unit": "кг", "category": "медицина"}. '
+                    "category — короткая группа: медицина, спорт, стрельба из лука, "
+                    "питомцы, растения, другое. Если это не измерение — {\"name\": null}."
+                ),
+            },
+            {"role": "user", "content": text},
+        ],
+        max_tokens=200,
+    )
+    data = parse_json(raw)
+    name = str(data.get("name") or "").strip()[:200]
+    value = data.get("value")
+    if not name or value is None:
+        return "Не понял, что записать. Напиши так: «вес 80 кг» или «давление 120/80»."
+
+    unit = str(data.get("unit") or "").strip()[:32] or None
+    category = str(data.get("category") or "другое").strip()[:100] or None
+    session.add(
+        Measurement(
+            user_id=user_id,
+            source="manual",
+            name=name,
+            category=category,
+            value=Decimal(str(value)),
+            unit=unit,
+            measured_at=date.today(),
+        )
+    )
+    await session.commit()
+    return f"Записал: {name} {value:g} {unit or ''}".strip()
 
 
 async def remember(session: AsyncSession, user_id: int, text: str) -> str:

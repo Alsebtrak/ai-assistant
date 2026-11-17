@@ -28,6 +28,7 @@ from app.router import (
     extract_url,
     ingest_link,
     metric_rows,
+    record_metric,
     remember,
     remind,
     search_answer,
@@ -189,6 +190,8 @@ async def on_text(message: Message) -> None:
                     return
             elif intent == "query":
                 answer = await ask_metric(session, message.from_user.id, text)
+            elif intent == "metric":
+                answer = await record_metric(session, message.from_user.id, text)
             else:
                 answer, documents = await ask(session, message.from_user.id, text)
                 sources = [
