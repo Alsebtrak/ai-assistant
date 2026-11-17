@@ -15,6 +15,15 @@ from app.config import settings
 from app.db import SessionLocal, init_db
 from app.memory import ask
 from app.models import Document, Entity, Fact, Measurement
+from app.router import (
+    ask_metric,
+    classify,
+    extract_url,
+    ingest_link,
+    remember,
+    remind,
+    search_answer,
+)
 from app.telegram import make_bot
 
 log = logging.getLogger(__name__)
@@ -99,22 +108,46 @@ async def handle_file(
 
 @router.message(F.text)
 async def on_text(message: Message) -> None:
+    text = message.text or ""
+    log.info("ask user=%s len=%s", message.from_user.id, len(text))
     await message.answer("Думаю…")
+
     try:
         async with SessionLocal() as session:
-            answer, documents = await ask(session, message.from_user.id, message.text)
+            intent = classify(text)
+            log.info("intent=%s", intent)
+            if intent == "link":
+                url = extract_url(text)
+                answer = (
+                    await ingest_link(session, message.from_user.id, url)
+                    if url
+                    else "Не нашёл ссылку."
+                )
+            elif intent == "remind":
+                answer = await remind(session, message.from_user.id, text)
+            elif intent == "remember":
+                answer = await remember(session, message.from_user.id, text)
+            elif intent == "search":
+                await message.answer("Взял в работу 🔎")
+                answer = await search_answer(text)
+            elif intent == "query":
+                answer = await ask_metric(session, message.from_user.id, text)
+            else:
+                answer, documents = await ask(session, message.from_user.id, text)
+                sources = [
+                    f"• {(doc.summary or doc.raw_text or '')[:80]}…"
+                    for doc in documents[:3]
+                    if doc
+                ]
+                if sources:
+                    answer += "\n\nИсточники:\n" + "\n".join(sources)
     except Exception:
         log.exception("ask failed")
         await message.answer("Не получилось ответить, попробуй ещё раз.")
         return
 
-    sources = [
-        f"• {(doc.summary or doc.raw_text or '')[ :80]}…" for doc in documents[:3] if doc
-    ]
-    text = answer
-    if sources:
-        text += "\n\nИсточники:\n" + "\n".join(sources)
-    await message.answer(text[:4000])
+    answer = (answer or "").strip() or "Не смог сформулировать ответ, попробуй переформулировать вопрос."
+    await message.answer(answer[:4000])
 
 
 @router.callback_query(F.data.startswith("save:"))
@@ -166,6 +199,11 @@ async def on_save(callback: CallbackQuery) -> None:
                 )
             except (InvalidOperation, ValueError):
                 continue
+            raw_date = item.get("measured_at")
+            try:
+                item_date = date.fromisoformat(raw_date) if raw_date else measured_at
+            except ValueError:
+                item_date = measured_at
             session.add(
                 Measurement(
                     user_id=document.user_id,
@@ -177,7 +215,7 @@ async def on_save(callback: CallbackQuery) -> None:
                     unit=item.get("unit"),
                     ref_low=ref_low,
                     ref_high=ref_high,
-                    measured_at=item.get("measured_at") or measured_at,
+                    measured_at=item_date,
                 )
             )
             saved += 1

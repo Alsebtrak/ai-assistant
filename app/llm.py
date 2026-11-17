@@ -43,6 +43,14 @@ async def chat(
 
     data = response.json()
     try:
-        return data["choices"][0]["message"]["content"]
+        message = data["choices"][0]["message"]
     except (KeyError, IndexError, TypeError) as exc:
         raise LLMError(f"Unexpected LLM response: {str(data)[:300]}") from exc
+
+    content = (message.get("content") or "").strip()
+    if not content:
+        # Reasoning-модели иногда отдают весь текст в reasoning_content
+        content = (message.get("reasoning_content") or "").strip()
+    if not content:
+        raise LLMError("Модель вернула пустой ответ")
+    return content

@@ -137,3 +137,17 @@ class Fact(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Reminder(Base):
+    __tablename__ = "reminders"
+    __table_args__ = (Index("ix_reminders_due", "sent_at", "due_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    text: Mapped[str] = mapped_column(String(500))
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

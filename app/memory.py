@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import llm
 from app.models import Chunk, Document, Entity, Fact
+from app.prompts import ANSWER_STYLE
 
 CHUNK_SIZE = 800
 CHUNK_OVERLAP = 100
@@ -80,9 +81,6 @@ async def ask(session: AsyncSession, user_id: int, question: str) -> tuple[str, 
     objects = await entities(session, user_id)
     chunks = await search_chunks(session, user_id, question)
 
-    if not facts and not objects and not chunks:
-        return "Пока в памяти ничего нет: пришли фото документа или напиши, что запомнить.", []
-
     profile = "\n".join(f"- {fact.key}: {fact.value}" for fact in facts) or "—"
     objects_block = "\n".join(
         f"- {entity.kind} «{entity.name}»: "
@@ -98,9 +96,12 @@ async def ask(session: AsyncSession, user_id: int, question: str) -> tuple[str, 
             {
                 "role": "system",
                 "content": (
-                    "Ты личный ассистент с базой записей пользователя. Отвечай по-русски, кратко. "
-                    "Опирайся только на профиль, объекты и фрагменты документов. Если данных не "
-                    "хватает, скажи, чего именно не хватает, и не выдумывай."
+                    ANSWER_STYLE
+                    + " Ты личный ассистент пользователя. Если вопрос о личных данных "
+                    "(здоровье, документы, питомцы, вещи) — опирайся на профиль, объекты "
+                    "и фрагменты документов и не выдумывай. Если таких данных нет, честно "
+                    "скажи об этом. Если вопрос общий (правила, нормативы, факты, спорт, "
+                    "техника) — отвечай из своих знаний, не притворяясь, что это из памяти."
                 ),
             },
             {

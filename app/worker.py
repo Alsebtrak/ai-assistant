@@ -5,15 +5,17 @@ from datetime import UTC, datetime
 from typing import ClassVar
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from arq import cron
 from arq.connections import RedisSettings
 from pypdf import PdfReader
+from sqlalchemy import select
 
 from app import storage
 from app.config import settings
 from app.db import SessionLocal
 from app.extract import ExtractError, extract_from_image, extract_from_text
 from app.memory import index_document
-from app.models import Document
+from app.models import Document, Reminder
 from app.telegram import make_bot
 
 log = logging.getLogger(__name__)
@@ -130,6 +132,32 @@ async def process_document(ctx, document_id: str) -> None:
         await notify(document, describe(document), with_buttons=True)
 
 
+async def check_reminders(ctx) -> None:
+    now = datetime.now(UTC)
+    async with SessionLocal() as session:
+        rows = list(
+            (
+                await session.scalars(
+                    select(Reminder).where(
+                        Reminder.sent_at.is_(None), Reminder.due_at <= now
+                    )
+                )
+            ).all()
+        )
+        if not rows:
+            return
+
+        bot = make_bot()
+        try:
+            for reminder in rows:
+                await bot.send_message(reminder.user_id, f"⏰ {reminder.text}")
+                reminder.sent_at = now
+            await session.commit()
+        finally:
+            await bot.session.close()
+
+
 class WorkerSettings:
-    functions: ClassVar = [process_document]
+    functions: ClassVar = [process_document, check_reminders]
+    cron_jobs: ClassVar = [cron(check_reminders, minute=set(range(60)))]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
