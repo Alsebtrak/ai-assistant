@@ -5,12 +5,19 @@ from decimal import Decimal, InvalidOperation
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import BaseFilter, CommandStart
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 from arq import create_pool
 from arq.connections import RedisSettings
 from sqlalchemy import select
 
 from app import storage
+from app.chart import render_chart
 from app.config import settings
 from app.db import SessionLocal, init_db
 from app.memory import ask, index_document
@@ -20,6 +27,7 @@ from app.router import (
     classify,
     extract_url,
     ingest_link,
+    metric_rows,
     remember,
     remind,
     search_answer,
@@ -166,6 +174,19 @@ async def on_text(message: Message) -> None:
             elif intent == "search":
                 await message.answer("Взял в работу 🔎")
                 answer = await search_answer(text)
+            elif intent == "chart":
+                result = await metric_rows(session, message.from_user.id, text)
+                if isinstance(result, str):
+                    answer = result
+                else:
+                    png = render_chart(result)
+                    caption = f"{result[0].name}: {len(result)} точек"
+                    if result[0].unit:
+                        caption += f", {result[0].unit}"
+                    await message.answer_photo(
+                        BufferedInputFile(png, filename="chart.png"), caption=caption
+                    )
+                    return
             elif intent == "query":
                 answer = await ask_metric(session, message.from_user.id, text)
             else:

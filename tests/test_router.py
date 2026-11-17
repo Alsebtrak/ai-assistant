@@ -15,8 +15,13 @@ def test_classify_remember():
 
 
 def test_classify_query():
-    assert classify("Покажи динамику АЛТ за год") == "query"
+    assert classify("Покажи динамику АЛТ за год") == "chart"
     assert classify("Сколько раз я сдавал кровь?") == "query"
+
+
+def test_classify_chart():
+    assert classify("Построй график АЛТ") == "chart"
+    assert classify("Покажи тренд витамина D") == "chart"
 
 
 def test_classify_remind():

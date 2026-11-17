@@ -34,6 +34,7 @@ QUERY_RE = re.compile(
     r"последни\w*|все результаты|статистик\w*)\b",
     re.IGNORECASE,
 )
+CHART_RE = re.compile(r"\b(график\w*|динамик\w*|тренд\w*)\b", re.IGNORECASE)
 MAX_PAGE = 2_000_000
 MSK = ZoneInfo("Europe/Moscow")
 
@@ -47,6 +48,8 @@ def classify(text: str) -> str:
         return "remember"
     if SEARCH_RE.search(text):
         return "search"
+    if CHART_RE.search(text):
+        return "chart"
     if QUERY_RE.search(text):
         return "query"
     return "question"
@@ -72,8 +75,13 @@ def is_safe_url(url: str) -> bool:
     return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved)
 
 
-async def ask_metric(session: AsyncSession, user_id: int, text: str) -> str:
-    """Выборка по измерениям: LLM вытаскивает метрику и период, SQL — данные."""
+async def metric_rows(
+    session: AsyncSession, user_id: int, text: str
+) -> list[Measurement] | str:
+    """LLM вытаскивает метрику и период, SQL — данные.
+
+    Возвращает список измерений или строку с объяснением, почему пусто.
+    """
     raw = await llm.chat(
         [
             {
@@ -104,24 +112,27 @@ async def ask_metric(session: AsyncSession, user_id: int, text: str) -> str:
         pass
     rows = list((await session.scalars(stmt.order_by(Measurement.measured_at).limit(50))).all())
 
-    if not rows:
-        names = (
-            await session.scalars(
-                select(Measurement.name)
-                .where(Measurement.user_id == user_id)
-                .distinct()
-                .limit(30)
-            )
-        ).all()
-        if names:
-            return "Не нашёл по запросу. В памяти есть: " + ", ".join(names)
-        return "В памяти пока нет измерений. Пришли фото анализа или импортируй КДЛ."
+    if rows:
+        return rows
 
-    lines = [
+    names = (
+        await session.scalars(
+            select(Measurement.name).where(Measurement.user_id == user_id).distinct().limit(30)
+        )
+    ).all()
+    if names:
+        return "Не нашёл по запросу. В памяти есть: " + ", ".join(names)
+    return "В памяти пока нет измерений. Пришли фото анализа или импортируй КДЛ."
+
+
+async def ask_metric(session: AsyncSession, user_id: int, text: str) -> str:
+    result = await metric_rows(session, user_id, text)
+    if isinstance(result, str):
+        return result
+    return "\n".join(
         f"{row.measured_at:%d.%m.%Y} — {row.name}: {row.value:g} {row.unit or ''}".strip()
-        for row in rows
-    ]
-    return "\n".join(lines)
+        for row in result
+    )
 
 
 async def remember(session: AsyncSession, user_id: int, text: str) -> str:
