@@ -95,8 +95,16 @@ async def upload_document(file: Annotated[UploadFile, File()]) -> dict:
         raise HTTPException(status_code=413, detail="file too large")
 
     mime = file.content_type or "application/octet-stream"
-    kind = "pdf" if mime == "application/pdf" else "photo"
-    extension = "pdf" if kind == "pdf" else "jpg"
+    filename = (file.filename or "").lower()
+    if mime == "application/pdf":
+        kind, extension = "pdf", "pdf"
+    elif filename.endswith(".xlsx") or mime in {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+    }:
+        kind, extension = "xlsx", "xlsx"
+    else:
+        kind, extension = "photo", "jpg"
     document_id = uuid.uuid4()
     key = f"{settings.owner_telegram_id}/{document_id}.{extension}"
 

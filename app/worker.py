@@ -15,10 +15,16 @@ from app import storage
 from app.config import settings
 from app.db import SessionLocal
 from app.digest import build_digest
-from app.extract import ExtractError, extract_from_image, extract_from_text
+from app.extract import (
+    ExtractError,
+    extract_from_image,
+    extract_from_table,
+    extract_from_text,
+)
 from app.memory import index_document
 from app.models import Document, Reminder
 from app.reminders import next_due
+from app.sheets import xlsx_to_text
 from app.telegram import make_bot
 from app.text import split_message
 
@@ -114,6 +120,11 @@ async def process_document(ctx, document_id: str) -> None:
                 if len(text) < 20:
                     raise ExtractError("В PDF нет текстового слоя — пришлите фото страницы")
                 extracted = await extract_from_text(text)
+            elif document.kind == "xlsx":
+                text = xlsx_to_text(data)
+                if len(text) < 20:
+                    raise ExtractError("В таблице нет данных")
+                extracted = await extract_from_table(text)
             else:
                 extracted = await extract_from_image(data, document.mime or "image/jpeg")
         except ExtractError as exc:

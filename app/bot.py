@@ -113,10 +113,25 @@ async def on_photo(message: Message, bot: Bot, arq) -> None:
 @router.message(F.document)
 async def on_document(message: Message, bot: Bot, arq) -> None:
     document = message.document
-    if document.mime_type != "application/pdf":
-        await message.answer("Пока понимаю фото и PDF.")
+    name = (document.file_name or "").lower()
+    if document.mime_type == "application/pdf":
+        await handle_file(message, bot, arq, document, "pdf", "application/pdf", "pdf")
         return
-    await handle_file(message, bot, arq, document, "pdf", "application/pdf", "pdf")
+    if name.endswith(".xlsx") or document.mime_type in {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+    }:
+        await handle_file(
+            message,
+            bot,
+            arq,
+            document,
+            "xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "xlsx",
+        )
+        return
+    await message.answer("Пока понимаю фото, PDF и Excel (.xlsx).")
 
 
 async def handle_file(

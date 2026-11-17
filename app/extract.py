@@ -127,6 +127,26 @@ async def extract_from_text(text: str) -> ExtractedDocument:
     return parse_document(raw)
 
 
+async def extract_from_table(text: str) -> ExtractedDocument:
+    """Таблицы: строки — показатели, столбцы — даты."""
+    raw = await llm.chat(
+        [
+            {
+                "role": "system",
+                "content": SYSTEM
+                + "\n\nЭто выгрузка из таблицы. Строки обычно показатели, столбцы — даты "
+                "или наоборот; шапки могут повторяться на каждом листе. Собери измерения "
+                "по датам, не пропускай строки с фамилией пользователя. Если дата в шапке "
+                "столбца — используй её для значений этого столбца.",
+            },
+            {"role": "user", "content": f"Таблица:\n\n{text[:20000]}"},
+        ],
+        model=settings.llm_model,
+        max_tokens=6000,
+    )
+    return parse_document(raw)
+
+
 async def extract_from_image(data: bytes, mime: str) -> ExtractedDocument:
     encoded = base64.b64encode(data).decode()
     raw = await llm.chat(
