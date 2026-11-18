@@ -5,10 +5,12 @@ from aiogram import Bot
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.exceptions import TelegramNetworkError
 from aiogram.methods import TelegramMethod
+from aiohttp import ClientTimeout
 
 from app.config import settings
 
 log = logging.getLogger(__name__)
+TIMEOUT = ClientTimeout(total=15)
 
 
 class RetrySession(AiohttpSession):
@@ -29,8 +31,8 @@ class RetrySession(AiohttpSession):
 def make_bot() -> Bot:
     """Telegram Bot API is blocked from Russian networks; set TELEGRAM_PROXY_URL if needed."""
     session = (
-        AiohttpSession(proxy=settings.telegram_proxy_url)
+        AiohttpSession(proxy=settings.telegram_proxy_url, timeout=TIMEOUT)
         if settings.telegram_proxy_url
-        else RetrySession()
+        else RetrySession(timeout=TIMEOUT)
     )
     return Bot(token=settings.telegram_bot_token, session=session)
