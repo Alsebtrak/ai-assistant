@@ -34,8 +34,18 @@ def test_extract_number():
 def test_classify_metric():
     assert classify("вес 80") == "metric"
     assert classify("давление 120/80") == "metric"
-    assert classify("серия 108") == "metric"
+    assert classify("пульс 62") == "metric"
     assert classify("Какой у меня вес?") != "metric"
+
+
+def test_classify_shot():
+    assert classify("серия 108, 18 м, 12 стрел") == "shot"
+    assert classify("108 очков на 18 м") == "shot"
+
+
+def test_classify_shot_stats():
+    assert classify("статистика стрельбы") == "shot_stats"
+    assert classify("покажи лучшие серии") == "shot_stats"
 
 
 def test_classify_remind():

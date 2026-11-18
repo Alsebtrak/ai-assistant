@@ -36,6 +36,12 @@ QUERY_RE = re.compile(
     re.IGNORECASE,
 )
 CHART_RE = re.compile(r"\b(график\w*|динамик\w*|тренд\w*)\b", re.IGNORECASE)
+SHOT_RE = re.compile(
+    r"\b(стрел\w*|серия|серии|мишен\w*|дистанц\w*|очк\w*|3d|лук\w*)\b", re.IGNORECASE
+)
+STATS_RE = re.compile(
+    r"\b(статистик\w*|итоги|средн\w*|лучш\w*|прогресс\w*|рекорд\w*)\b", re.IGNORECASE
+)
 QUESTION_WORDS_RE = re.compile(
     r"\?|сколько|какой|какая|какие|покажи|график|напомни|запомни|найди|что такое",
     re.IGNORECASE,
@@ -55,8 +61,12 @@ def classify(text: str) -> str:
         return "search"
     if CHART_RE.search(text):
         return "chart"
+    if STATS_RE.search(text) and SHOT_RE.search(text):
+        return "shot_stats"
     if QUERY_RE.search(text):
         return "query"
+    if SHOT_RE.search(text) and re.search(r"\d", text):
+        return "shot"
     if (
         len(text) <= 80
         and re.search(r"\d", text)
@@ -195,6 +205,107 @@ async def record_metric(session: AsyncSession, user_id: int, text: str) -> str:
     )
     await session.commit()
     return f"Записал: {name} {value:g} {unit or ''}".strip()
+
+
+async def record_shot(session: AsyncSession, user_id: int, text: str) -> str:
+    raw = await llm.chat(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "Извлеки данные серии стрельбы из лука. Ответ — только JSON: "
+                    '{"points": число|null, "distance_m": число|null, "arrows": число|null, '
+                    '"discipline": "3D|длинный лук|классический|блочный|null"}. '
+                    "points — очки серии (сумма), distance_m — дистанция в метрах, "
+                    "arrows — число стрел. Не выдумывай: чего нет — null."
+                ),
+            },
+            {"role": "user", "content": text},
+        ],
+        max_tokens=200,
+    )
+    data = parse_json(raw)
+    points = data.get("points")
+    if points is None:
+        points = extract_number(text)
+    if points is None:
+        return "Не вижу очков серии. Напиши так: «серия 108, 18 м, 12 стрел»."
+
+    meta = {
+        "distance_m": data.get("distance_m"),
+        "arrows": data.get("arrows"),
+        "discipline": data.get("discipline"),
+    }
+    session.add(
+        Measurement(
+            user_id=user_id,
+            source="manual",
+            name="Серия",
+            category="стрельба из лука",
+            value=Decimal(str(points)),
+            unit="очков",
+            meta={key: value for key, value in meta.items() if value is not None},
+            measured_at=date.today(),
+        )
+    )
+    await session.commit()
+
+    details = []
+    if meta["distance_m"]:
+        details.append(f"{meta['distance_m']:g} м")
+    if meta["arrows"]:
+        details.append(f"{meta['arrows']:g} стрел")
+    if meta["discipline"]:
+        details.append(str(meta["discipline"]))
+    suffix = f" ({', '.join(details)})" if details else ""
+    return f"Записал серию: {points:g} очков{suffix}"
+
+
+def format_shot_stats(rows: list[Measurement]) -> str:
+    if not rows:
+        return "Серий пока нет. Напиши так: «серия 108, 18 м, 12 стрел»."
+
+    values = [float(row.value) for row in rows if row.value is not None]
+    if not values:
+        return "В сериях нет числовых значений."
+
+    lines = [
+        f"Серий: {len(values)}",
+        f"Средний: {sum(values) / len(values):.1f}",
+        f"Лучший: {max(values):g}",
+        f"Худший: {min(values):g}",
+    ]
+
+    by_distance: dict[str, list[float]] = {}
+    for row in rows:
+        distance = (row.meta or {}).get("distance_m")
+        if distance is None:
+            continue
+        by_distance.setdefault(f"{float(distance):g} м", []).append(float(row.value))
+
+    if by_distance:
+        lines.append("")
+        lines.append("По дистанциям:")
+        for distance, scores in sorted(by_distance.items()):
+            lines.append(
+                f"• {distance}: {len(scores)} серий, средний {sum(scores) / len(scores):.1f}, "
+                f"лучший {max(scores):g}"
+            )
+    return "\n".join(lines)
+
+
+async def shot_stats(session: AsyncSession, user_id: int) -> str:
+    stmt = (
+        select(Measurement)
+        .where(
+            Measurement.user_id == user_id,
+            Measurement.category.ilike("%стрельба%"),
+        )
+        .order_by(Measurement.measured_at)
+        .limit(500)
+    )
+    rows = list((await session.scalars(stmt)).all())
+    return format_shot_stats(rows)
 
 
 async def remember(session: AsyncSession, user_id: int, text: str) -> str:

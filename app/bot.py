@@ -29,9 +29,11 @@ from app.router import (
     ingest_link,
     metric_rows,
     record_metric,
+    record_shot,
     remember,
     remind,
     search_answer,
+    shot_stats,
 )
 from app.telegram import make_bot
 from app.text import split_message
@@ -207,6 +209,10 @@ async def on_text(message: Message) -> None:
                 answer = await ask_metric(session, message.from_user.id, text)
             elif intent == "metric":
                 answer = await record_metric(session, message.from_user.id, text)
+            elif intent == "shot":
+                answer = await record_shot(session, message.from_user.id, text)
+            elif intent == "shot_stats":
+                answer = await shot_stats(session, message.from_user.id)
             else:
                 answer, documents = await ask(session, message.from_user.id, text)
                 sources = [

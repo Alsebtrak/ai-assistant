@@ -106,6 +106,7 @@ class Measurement(Base):
     category: Mapped[str | None] = mapped_column(String(100), index=True)
     value: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
     unit: Mapped[str | None] = mapped_column(String(32))
+    meta: Mapped[dict] = mapped_column(JSONB, default=dict)
     ref_low: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
     ref_high: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
     measured_at: Mapped[date] = mapped_column(Date, index=True)
